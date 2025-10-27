@@ -180,14 +180,31 @@ npm run db:migrate
 npm run db:studio
 ```
 
-## Next Steps
+## Admin Dashboard
 
-1. Implement authentication endpoints (register, login)
-2. Add post CRUD operations
-3. Add category management
-4. Implement file upload functionality
-5. Add validation middleware
-6. Create React admin panel (Phase 2)
+This CMS includes a comprehensive REST API. To build a user-friendly admin interface:
+
+📘 **See [ADMIN_DASHBOARD_GUIDE.md](ADMIN_DASHBOARD_GUIDE.md)** for complete instructions on creating a React-based admin dashboard.
+
+The guide includes:
+- Complete React + TypeScript setup with Vite
+- Authentication and routing
+- Full CRUD interfaces for posts, categories, tags
+- Comment moderation system
+- File upload interface
+- Ready-to-use code examples
+
+## Features Summary
+
+✅ **Implemented Features:**
+- User authentication (JWT)
+- Post management with tags and categories
+- Full-text search with PostgreSQL
+- Comment system with moderation
+- File uploads with validation
+- Category and tag organization
+- Role-based access control
+- RESTful API
 
 ## License
 
