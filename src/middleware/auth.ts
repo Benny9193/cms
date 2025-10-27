@@ -25,7 +25,7 @@ export const authenticate = async (
     };
 
     req.user = decoded;
-    next();
+    return next();
   } catch (error) {
     return sendError(res, 'Invalid or expired token', 401);
   }
@@ -41,6 +41,6 @@ export const authorize = (...roles: string[]) => {
       return sendError(res, 'Forbidden: Insufficient permissions', 403);
     }
 
-    next();
+    return next();
   };
 };
