@@ -6,6 +6,7 @@ const router = Router();
 
 // Public routes
 router.get('/', postController.getAllPosts.bind(postController));
+router.get('/search', postController.searchPosts.bind(postController));
 router.get('/slug/:slug', postController.getPostBySlug.bind(postController));
 router.get('/:id', postController.getPostById.bind(postController));
 

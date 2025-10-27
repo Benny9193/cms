@@ -148,6 +148,44 @@ export class PostController {
       return sendError(res, error.message || 'Failed to delete post', statusCode);
     }
   }
+
+  async searchPosts(req: AuthRequest, res: Response) {
+    try {
+      const query = req.query.q as string;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const published = req.query.published === 'true' ? true : req.query.published === 'false' ? false : undefined;
+      const authorId = req.query.authorId as string;
+      const categoryId = req.query.categoryId as string;
+
+      // Validation
+      if (!query) {
+        return sendError(res, 'Search query parameter (q) is required', 400);
+      }
+
+      if (query.trim().length < 2) {
+        return sendError(res, 'Search query must be at least 2 characters long', 400);
+      }
+
+      // Limit page size
+      const maxLimit = 50;
+      const finalLimit = Math.min(limit, maxLimit);
+
+      const result = await postService.searchPosts({
+        query,
+        page,
+        limit: finalLimit,
+        published,
+        authorId,
+        categoryId,
+      });
+
+      return sendSuccess(res, result, 'Search completed successfully');
+    } catch (error: any) {
+      console.error('Search posts error:', error);
+      return sendError(res, error.message || 'Failed to search posts', 400);
+    }
+  }
 }
 
 export default new PostController();

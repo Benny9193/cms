@@ -254,6 +254,99 @@ export class PostService {
 
     return { message: 'Post deleted successfully' };
   }
+
+  async searchPosts(options: {
+    query: string;
+    page?: number;
+    limit?: number;
+    published?: boolean;
+    authorId?: string;
+    categoryId?: string;
+  }) {
+    const page = options.page || 1;
+    const limit = options.limit || 10;
+    const skip = (page - 1) * limit;
+
+    if (!options.query || options.query.trim().length === 0) {
+      throw new Error('Search query is required');
+    }
+
+    const searchQuery = options.query.trim();
+
+    // Build where clause with search conditions
+    const where: any = {
+      OR: [
+        {
+          title: {
+            contains: searchQuery,
+            mode: 'insensitive',
+          },
+        },
+        {
+          content: {
+            contains: searchQuery,
+            mode: 'insensitive',
+          },
+        },
+        {
+          excerpt: {
+            contains: searchQuery,
+            mode: 'insensitive',
+          },
+        },
+      ],
+    };
+
+    // Apply additional filters
+    if (options.published !== undefined) {
+      where.published = options.published;
+    }
+
+    if (options.authorId) {
+      where.authorId = options.authorId;
+    }
+
+    if (options.categoryId) {
+      where.categories = {
+        some: {
+          id: options.categoryId,
+        },
+      };
+    }
+
+    const [posts, total] = await Promise.all([
+      prisma.post.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: {
+          createdAt: 'desc',
+        },
+        include: {
+          author: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+          categories: true,
+        },
+      }),
+      prisma.post.count({ where }),
+    ]);
+
+    return {
+      posts,
+      query: searchQuery,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
 }
 
 export default new PostService();
