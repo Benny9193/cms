@@ -9,14 +9,16 @@ A modern, TypeScript-based headless CMS built with Node.js, Express, and Prisma.
 - Role-based access control (User/Admin)
 - Content management (Posts, Categories)
 - File upload support
-- SQLite database (easily swappable to PostgreSQL/MySQL)
+- **PostgreSQL with advanced full-text search** (with SQLite fallback)
+- Full-text search with ranking and relevance scoring
 - TypeScript for type safety
 - Prisma ORM for database operations
 
 ## Tech Stack
 
 - **Backend**: Node.js + Express + TypeScript
-- **Database**: SQLite (via Prisma ORM)
+- **Database**: PostgreSQL (recommended) or SQLite
+- **Search**: PostgreSQL full-text search with GIN indexes
 - **Authentication**: JWT + bcrypt
 - **File Upload**: Multer
 
@@ -47,6 +49,7 @@ cms/
 
 - Node.js (v16 or higher)
 - npm or yarn
+- PostgreSQL 12+ (recommended) or SQLite (for quick start)
 
 ### Installation
 
@@ -61,22 +64,59 @@ cd cms
 npm install
 ```
 
-3. Set up environment variables
+3. Set up database
+
+**Option A: PostgreSQL (Recommended for production and advanced search)**
+
+Install PostgreSQL and create a database:
+```bash
+# Create database
+createdb cms_db
+
+# Or using psql
+psql -U postgres
+CREATE DATABASE cms_db;
+```
+
+**Option B: SQLite (Quick start)**
+
+No installation needed, uses a local file.
+
+4. Set up environment variables
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and update the values as needed.
+Edit `.env` and update the DATABASE_URL:
 
-4. Generate Prisma client
+For PostgreSQL:
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/cms_db?schema=public"
+```
+
+For SQLite:
+```env
+DATABASE_URL="file:./dev.db"
+```
+
+5. Generate Prisma client
 ```bash
 npm run db:generate
 ```
 
-5. Push the database schema
+6. Push the database schema
 ```bash
 npm run db:push
 ```
+
+7. **(PostgreSQL only)** Set up full-text search indexes
+```bash
+cat prisma/migrations/add_fulltext_search/migration.sql | psql -U postgres -d cms_db
+```
+
+### Migrating from SQLite to PostgreSQL
+
+See [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) for detailed instructions on migrating to PostgreSQL for better performance and advanced search features.
 
 ### Running the Application
 

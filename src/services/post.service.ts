@@ -273,54 +273,92 @@ export class PostService {
 
     const searchQuery = options.query.trim();
 
-    // Build where clause with search conditions
-    const where: any = {
-      OR: [
-        {
-          title: {
-            contains: searchQuery,
-            mode: 'insensitive',
-          },
-        },
-        {
-          content: {
-            contains: searchQuery,
-            mode: 'insensitive',
-          },
-        },
-        {
-          excerpt: {
-            contains: searchQuery,
-            mode: 'insensitive',
-          },
-        },
-      ],
-    };
+    // Use PostgreSQL full-text search with ranking
+    // The search_vector column uses weights: A (title), B (excerpt), C (content)
+    // This provides relevance-based ranking
 
-    // Apply additional filters
+    // Build filter conditions
+    const filters: string[] = [];
+    const params: any[] = [searchQuery];
+    let paramIndex = 1;
+
     if (options.published !== undefined) {
-      where.published = options.published;
+      paramIndex++;
+      filters.push(`p.published = $${paramIndex}`);
+      params.push(options.published);
     }
 
     if (options.authorId) {
-      where.authorId = options.authorId;
+      paramIndex++;
+      filters.push(`p."authorId" = $${paramIndex}`);
+      params.push(options.authorId);
     }
 
     if (options.categoryId) {
-      where.categories = {
-        some: {
-          id: options.categoryId,
-        },
-      };
+      paramIndex++;
+      filters.push(`EXISTS (
+        SELECT 1 FROM "_CategoryToPost" cp
+        WHERE cp."B" = p.id AND cp."A" = $${paramIndex}
+      )`);
+      params.push(options.categoryId);
     }
 
-    const [posts, total] = await Promise.all([
-      prisma.post.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: {
-          createdAt: 'desc',
+    const whereClause = filters.length > 0 ? `AND ${filters.join(' AND ')}` : '';
+
+    // Add pagination params
+    params.push(limit, skip);
+    const limitParam = paramIndex + 1;
+    const offsetParam = paramIndex + 2;
+
+    // PostgreSQL full-text search query with ranking
+    const searchSQL = `
+      SELECT
+        p.*,
+        ts_rank(p.search_vector, websearch_to_tsquery('english', $1)) as rank
+      FROM "Post" p
+      WHERE p.search_vector @@ websearch_to_tsquery('english', $1)
+        ${whereClause}
+      ORDER BY rank DESC, p."createdAt" DESC
+      LIMIT $${limitParam} OFFSET $${offsetParam}
+    `;
+
+    const countSQL = `
+      SELECT COUNT(*) as count
+      FROM "Post" p
+      WHERE p.search_vector @@ websearch_to_tsquery('english', $1)
+        ${whereClause}
+    `;
+
+    try {
+      // Execute search query
+      const [searchResults, countResults] = await Promise.all([
+        prisma.$queryRawUnsafe(searchSQL, ...params) as Promise<any[]>,
+        prisma.$queryRawUnsafe(countSQL, ...params.slice(0, -2)) as Promise<any[]>,
+      ]);
+
+      const total = parseInt(countResults[0]?.count || '0');
+
+      // Fetch full post data with relations for the found posts
+      const postIds = searchResults.map((r: any) => r.id);
+
+      if (postIds.length === 0) {
+        return {
+          posts: [],
+          query: searchQuery,
+          pagination: {
+            page,
+            limit,
+            total: 0,
+            totalPages: 0,
+          },
+        };
+      }
+
+      const posts = await prisma.post.findMany({
+        where: {
+          id: {
+            in: postIds,
+          },
         },
         include: {
           author: {
@@ -332,20 +370,100 @@ export class PostService {
           },
           categories: true,
         },
-      }),
-      prisma.post.count({ where }),
-    ]);
+      });
 
-    return {
-      posts,
-      query: searchQuery,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+      // Sort posts by the original search rank
+      const rankedPosts = postIds
+        .map((id: string) => posts.find((p: any) => p.id === id))
+        .filter(Boolean) as any[];
+
+      return {
+        posts: rankedPosts,
+        query: searchQuery,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    } catch (error: any) {
+      // Fallback to basic search if PostgreSQL full-text search fails
+      // This can happen if the search_vector column doesn't exist yet
+      console.warn('PostgreSQL full-text search failed, falling back to basic search:', error.message);
+
+      const where: any = {
+        OR: [
+          {
+            title: {
+              contains: searchQuery,
+              mode: 'insensitive',
+            },
+          },
+          {
+            content: {
+              contains: searchQuery,
+              mode: 'insensitive',
+            },
+          },
+          {
+            excerpt: {
+              contains: searchQuery,
+              mode: 'insensitive',
+            },
+          },
+        ],
+      };
+
+      if (options.published !== undefined) {
+        where.published = options.published;
+      }
+
+      if (options.authorId) {
+        where.authorId = options.authorId;
+      }
+
+      if (options.categoryId) {
+        where.categories = {
+          some: {
+            id: options.categoryId,
+          },
+        };
+      }
+
+      const [posts, total] = await Promise.all([
+        prisma.post.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: {
+            createdAt: 'desc',
+          },
+          include: {
+            author: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+            categories: true,
+          },
+        }),
+        prisma.post.count({ where }),
+      ]);
+
+      return {
+        posts,
+        query: searchQuery,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    }
   }
 }
 

@@ -2,10 +2,11 @@
 
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "fullTextIndex"]
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -34,6 +35,8 @@ model Post {
   authorId    String
   author      User     @relation(fields: [authorId], references: [id])
   categories  Category[]
+
+  @@index([title, content, excerpt])
 }
 
 model Category {
