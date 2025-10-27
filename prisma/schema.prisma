@@ -19,6 +19,7 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   posts     Post[]
+  comments  Comment[]
 }
 
 model Post {
@@ -35,6 +36,8 @@ model Post {
   authorId    String
   author      User     @relation(fields: [authorId], references: [id])
   categories  Category[]
+  tags        Tag[]
+  comments    Comment[]
 
   @@index([title, content, excerpt])
 }
@@ -47,4 +50,32 @@ model Category {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   posts       Post[]
+}
+
+model Tag {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  posts     Post[]
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  content   String
+  approved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  parentId  String?
+  parent    Comment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentReplies")
+
+  @@index([postId])
+  @@index([authorId])
+  @@index([approved])
 }

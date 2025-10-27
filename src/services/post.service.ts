@@ -36,6 +36,11 @@ export class PostService {
               connect: data.categoryIds.map((id) => ({ id })),
             }
           : undefined,
+        tags: data.tagIds
+          ? {
+              connect: data.tagIds.map((id) => ({ id })),
+            }
+          : undefined,
       },
       include: {
         author: {
@@ -46,6 +51,7 @@ export class PostService {
           },
         },
         categories: true,
+        tags: true,
       },
     });
 
@@ -98,6 +104,7 @@ export class PostService {
             },
           },
           categories: true,
+          tags: true,
         },
       }),
       prisma.post.count({ where }),
@@ -126,6 +133,7 @@ export class PostService {
           },
         },
         categories: true,
+        tags: true,
       },
     });
 
@@ -148,6 +156,7 @@ export class PostService {
           },
         },
         categories: true,
+        tags: true,
       },
     });
 
@@ -217,6 +226,11 @@ export class PostService {
               set: data.categoryIds.map((catId) => ({ id: catId })),
             }
           : undefined,
+        tags: data.tagIds
+          ? {
+              set: data.tagIds.map((tagId) => ({ id: tagId })),
+            }
+          : undefined,
       },
       include: {
         author: {
@@ -227,6 +241,7 @@ export class PostService {
           },
         },
         categories: true,
+        tags: true,
       },
     });
 

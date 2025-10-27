@@ -10,7 +10,7 @@ export class PostController {
         return sendError(res, 'Unauthorized', 401);
       }
 
-      const { title, content, excerpt, featuredImage, published, categoryIds } = req.body;
+      const { title, content, excerpt, featuredImage, published, categoryIds, tagIds } = req.body;
 
       // Validation
       if (!title || !content) {
@@ -29,6 +29,7 @@ export class PostController {
           featuredImage,
           published,
           categoryIds,
+          tagIds,
         },
         req.user.id
       );
@@ -102,7 +103,7 @@ export class PostController {
       }
 
       const { id } = req.params;
-      const { title, content, excerpt, featuredImage, published, categoryIds } = req.body;
+      const { title, content, excerpt, featuredImage, published, categoryIds, tagIds } = req.body;
 
       // Validation
       if (title && title.length < 3) {
@@ -118,6 +119,7 @@ export class PostController {
           featuredImage,
           published,
           categoryIds,
+          tagIds,
         },
         req.user.id,
         req.user.role
