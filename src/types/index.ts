@@ -25,8 +25,15 @@ export interface CreatePostDto {
   excerpt?: string;
   featuredImage?: string;
   published?: boolean;
+  scheduledPublishAt?: string;
   categoryIds?: string[];
   tagIds?: string[];
+  // SEO fields
+  metaTitle?: string;
+  metaDescription?: string;
+  ogTitle?: string;
+  ogDescription?: string;
+  ogImage?: string;
 }
 
 export interface UpdatePostDto {
@@ -35,8 +42,15 @@ export interface UpdatePostDto {
   excerpt?: string;
   featuredImage?: string;
   published?: boolean;
+  scheduledPublishAt?: string;
   categoryIds?: string[];
   tagIds?: string[];
+  // SEO fields
+  metaTitle?: string;
+  metaDescription?: string;
+  ogTitle?: string;
+  ogDescription?: string;
+  ogImage?: string;
 }
 
 export interface CreateCategoryDto {

@@ -16,21 +16,34 @@ model User {
   password  String
   name      String
   role      String   @default("user") // user, admin
+  banned    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   posts     Post[]
   comments  Comment[]
+  revisions PostRevision[]
+  media     Media[]
 }
 
 model Post {
-  id          String   @id @default(uuid())
-  title       String
-  slug        String   @unique
-  content     String
-  excerpt     String?
-  featuredImage String?
-  published   Boolean  @default(false)
-  publishedAt DateTime?
+  id                String   @id @default(uuid())
+  title             String
+  slug              String   @unique
+  content           String
+  excerpt           String?
+  featuredImage     String?
+  published         Boolean  @default(false)
+  publishedAt       DateTime?
+  scheduledPublishAt DateTime?
+  readingTime       Int?     // in minutes
+
+  // SEO fields
+  metaTitle         String?
+  metaDescription   String?
+  ogTitle           String?
+  ogDescription     String?
+  ogImage           String?
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   authorId    String
@@ -38,8 +51,13 @@ model Post {
   categories  Category[]
   tags        Tag[]
   comments    Comment[]
+  revisions   PostRevision[]
+  views       PostView[]
+  socialShares SocialShare[]
 
   @@index([title, content, excerpt])
+  @@index([published, publishedAt])
+  @@index([scheduledPublishAt])
 }
 
 model Category {
@@ -78,4 +96,60 @@ model Comment {
   @@index([postId])
   @@index([authorId])
   @@index([approved])
+}
+
+model PostRevision {
+  id        String   @id @default(uuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  title     String
+  content   String
+  excerpt   String?
+  createdAt DateTime @default(now())
+  createdBy String
+  author    User     @relation(fields: [createdBy], references: [id])
+
+  @@index([postId, createdAt])
+}
+
+model PostView {
+  id         String   @id @default(uuid())
+  postId     String
+  post       Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  viewedAt   DateTime @default(now())
+  ipAddress  String?
+  userAgent  String?
+
+  @@index([postId, viewedAt])
+}
+
+model Media {
+  id           String   @id @default(uuid())
+  filename     String
+  originalName String
+  mimetype     String
+  size         Int
+  path         String
+  url          String
+  folder       String?  @default("root")
+  altText      String?
+  caption      String?
+  uploadedBy   String
+  uploader     User     @relation(fields: [uploadedBy], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([folder])
+  @@index([uploadedBy])
+}
+
+model SocialShare {
+  id         String   @id @default(uuid())
+  postId     String
+  post       Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  platform   String   // twitter, facebook, linkedin, etc.
+  sharedAt   DateTime @default(now())
+  shareUrl   String?
+
+  @@index([postId, platform])
 }

@@ -1,10 +1,6 @@
 import prisma from '../utils/db';
 import { CreatePostDto, UpdatePostDto } from '../types';
 import { generateSlug, makeUniqueSlug } from '../utils/slug';
-import { sanitizePostContent, sanitizePlainText } from '../utils/sanitize';
-import { calculateReadingTime } from '../utils/readingTime';
-import revisionService from './revision.service';
-import cacheService from './cache.service';
 
 export class PostService {
   async createPost(data: CreatePostDto, authorId: string) {
@@ -24,38 +20,16 @@ export class PostService {
     const existingSlugs = existingPosts.map((p: { slug: string }) => p.slug);
     const uniqueSlug = makeUniqueSlug(baseSlug, existingSlugs);
 
-    // Sanitize content
-    const sanitizedContent = sanitizePostContent(data.content);
-    const sanitizedExcerpt = data.excerpt ? sanitizePlainText(data.excerpt) : undefined;
-
-    // Calculate reading time
-    const readingTime = calculateReadingTime(sanitizedContent);
-
-    // Handle scheduled publishing
-    const isPublished = data.published || false;
-    const scheduledPublishAt = data.scheduledPublishAt ? new Date(data.scheduledPublishAt) : null;
-    const publishedAt = isPublished && !scheduledPublishAt ? new Date() : null;
-
     // Create the post
     const post = await prisma.post.create({
       data: {
         title: data.title,
         slug: uniqueSlug,
-        content: sanitizedContent,
-        excerpt: sanitizedExcerpt,
+        content: data.content,
+        excerpt: data.excerpt,
         featuredImage: data.featuredImage,
-        published: scheduledPublishAt ? false : isPublished,
-        publishedAt,
-        scheduledPublishAt,
-        readingTime,
-
-        // SEO fields
-        metaTitle: data.metaTitle,
-        metaDescription: data.metaDescription,
-        ogTitle: data.ogTitle,
-        ogDescription: data.ogDescription,
-        ogImage: data.ogImage,
-
+        published: data.published || false,
+        publishedAt: data.published ? new Date() : null,
         authorId,
         categories: data.categoryIds
           ? {
@@ -81,16 +55,6 @@ export class PostService {
       },
     });
 
-    // Create initial revision
-    await revisionService.createRevision(post.id, authorId, {
-      title: post.title,
-      content: post.content,
-      excerpt: post.excerpt || undefined,
-    });
-
-    // Invalidate cache
-    await cacheService.invalidatePosts();
-
     return post;
   }
 
@@ -104,11 +68,6 @@ export class PostService {
     const page = options.page || 1;
     const limit = options.limit || 10;
     const skip = (page - 1) * limit;
-
-    // Try cache first
-    const cacheKey = cacheService.getPostsKey(page, limit);
-    const cached = await cacheService.get(cacheKey);
-    if (cached) return cached;
 
     const where: any = {};
 
@@ -146,23 +105,13 @@ export class PostService {
           },
           categories: true,
           tags: true,
-          _count: {
-            select: {
-              views: true,
-              comments: true,
-            },
-          },
         },
       }),
       prisma.post.count({ where }),
     ]);
 
-    const result = {
-      posts: posts.map((post) => ({
-        ...post,
-        viewCount: post._count.views,
-        commentCount: post._count.comments,
-      })),
+    return {
+      posts,
       pagination: {
         page,
         limit,
@@ -170,11 +119,6 @@ export class PostService {
         totalPages: Math.ceil(total / limit),
       },
     };
-
-    // Cache for 5 minutes
-    await cacheService.set(cacheKey, result, 300);
-
-    return result;
   }
 
   async getPostById(id: string) {
@@ -190,12 +134,6 @@ export class PostService {
         },
         categories: true,
         tags: true,
-        _count: {
-          select: {
-            views: true,
-            comments: true,
-          },
-        },
       },
     });
 
@@ -203,19 +141,10 @@ export class PostService {
       throw new Error('Post not found');
     }
 
-    return {
-      ...post,
-      viewCount: post._count.views,
-      commentCount: post._count.comments,
-    };
+    return post;
   }
 
   async getPostBySlug(slug: string) {
-    // Try cache first
-    const cacheKey = cacheService.getPostKey(slug);
-    const cached = await cacheService.get(cacheKey);
-    if (cached) return cached;
-
     const post = await prisma.post.findUnique({
       where: { slug },
       include: {
@@ -228,12 +157,6 @@ export class PostService {
         },
         categories: true,
         tags: true,
-        _count: {
-          select: {
-            views: true,
-            comments: true,
-          },
-        },
       },
     });
 
@@ -241,16 +164,7 @@ export class PostService {
       throw new Error('Post not found');
     }
 
-    const result = {
-      ...post,
-      viewCount: post._count.views,
-      commentCount: post._count.comments,
-    };
-
-    // Cache for 10 minutes
-    await cacheService.set(cacheKey, result, 600);
-
-    return result;
+    return post;
   }
 
   async updatePost(id: string, data: UpdatePostDto, userId: string, userRole: string) {
@@ -267,13 +181,6 @@ export class PostService {
     if (existingPost.authorId !== userId && userRole !== 'admin') {
       throw new Error('You are not authorized to update this post');
     }
-
-    // Create revision before updating
-    await revisionService.createRevision(id, userId, {
-      title: existingPost.title,
-      content: existingPost.content,
-      excerpt: existingPost.excerpt || undefined,
-    });
 
     // Handle slug update if title changed
     let slug = existingPost.slug;
@@ -295,49 +202,25 @@ export class PostService {
       slug = makeUniqueSlug(baseSlug, existingSlugs);
     }
 
-    // Sanitize content if provided
-    const sanitizedContent = data.content ? sanitizePostContent(data.content) : undefined;
-    const sanitizedExcerpt = data.excerpt ? sanitizePlainText(data.excerpt) : undefined;
-
-    // Calculate reading time if content changed
-    const readingTime = sanitizedContent ? calculateReadingTime(sanitizedContent) : undefined;
-
     // Handle publish status
-    let publishedAt = existingPost.publishedAt;
-    let scheduledPublishAt = existingPost.scheduledPublishAt;
-
-    if (data.scheduledPublishAt) {
-      scheduledPublishAt = new Date(data.scheduledPublishAt);
-      publishedAt = null;
-    } else if (data.published !== undefined) {
-      if (data.published && !existingPost.published) {
-        publishedAt = new Date();
-        scheduledPublishAt = null;
-      } else if (!data.published) {
-        publishedAt = null;
-      }
-    }
+    const publishedAt =
+      data.published !== undefined
+        ? data.published
+          ? existingPost.publishedAt || new Date()
+          : null
+        : existingPost.publishedAt;
 
     // Update the post
     const updatedPost = await prisma.post.update({
       where: { id },
       data: {
-        ...(data.title && { title: data.title, slug }),
-        ...(sanitizedContent && { content: sanitizedContent }),
-        ...(sanitizedExcerpt !== undefined && { excerpt: sanitizedExcerpt }),
-        ...(data.featuredImage !== undefined && { featuredImage: data.featuredImage }),
-        ...(data.published !== undefined && { published: data.published }),
-        ...(publishedAt !== undefined && { publishedAt }),
-        ...(scheduledPublishAt !== undefined && { scheduledPublishAt }),
-        ...(readingTime && { readingTime }),
-
-        // SEO fields
-        ...(data.metaTitle !== undefined && { metaTitle: data.metaTitle }),
-        ...(data.metaDescription !== undefined && { metaDescription: data.metaDescription }),
-        ...(data.ogTitle !== undefined && { ogTitle: data.ogTitle }),
-        ...(data.ogDescription !== undefined && { ogDescription: data.ogDescription }),
-        ...(data.ogImage !== undefined && { ogImage: data.ogImage }),
-
+        title: data.title,
+        slug,
+        content: data.content,
+        excerpt: data.excerpt,
+        featuredImage: data.featuredImage,
+        published: data.published,
+        publishedAt,
         categories: data.categoryIds
           ? {
               set: data.categoryIds.map((catId) => ({ id: catId })),
@@ -362,11 +245,6 @@ export class PostService {
       },
     });
 
-    // Invalidate cache
-    await cacheService.invalidatePost(existingPost.slug);
-    await cacheService.invalidatePost(updatedPost.slug);
-    await cacheService.invalidatePosts();
-
     return updatedPost;
   }
 
@@ -389,10 +267,6 @@ export class PostService {
       where: { id },
     });
 
-    // Invalidate cache
-    await cacheService.invalidatePost(existingPost.slug);
-    await cacheService.invalidatePosts();
-
     return { message: 'Post deleted successfully' };
   }
 
@@ -414,10 +288,9 @@ export class PostService {
 
     const searchQuery = options.query.trim();
 
-    // Try cache first
-    const cacheKey = cacheService.getSearchKey(searchQuery, page);
-    const cached = await cacheService.get(cacheKey);
-    if (cached) return cached;
+    // Use PostgreSQL full-text search with ranking
+    // The search_vector column uses weights: A (title), B (excerpt), C (content)
+    // This provides relevance-based ranking
 
     // Build filter conditions
     const filters: string[] = [];
@@ -511,13 +384,6 @@ export class PostService {
             },
           },
           categories: true,
-          tags: true,
-          _count: {
-            select: {
-              views: true,
-              comments: true,
-            },
-          },
         },
       });
 
@@ -526,12 +392,8 @@ export class PostService {
         .map((id: string) => posts.find((p: any) => p.id === id))
         .filter(Boolean) as any[];
 
-      const result = {
-        posts: rankedPosts.map((post) => ({
-          ...post,
-          viewCount: post._count.views,
-          commentCount: post._count.comments,
-        })),
+      return {
+        posts: rankedPosts,
         query: searchQuery,
         pagination: {
           page,
@@ -540,13 +402,9 @@ export class PostService {
           totalPages: Math.ceil(total / limit),
         },
       };
-
-      // Cache for 5 minutes
-      await cacheService.set(cacheKey, result, 300);
-
-      return result;
     } catch (error: any) {
       // Fallback to basic search if PostgreSQL full-text search fails
+      // This can happen if the search_vector column doesn't exist yet
       console.warn('PostgreSQL full-text search failed, falling back to basic search:', error.message);
 
       const where: any = {
@@ -605,24 +463,13 @@ export class PostService {
               },
             },
             categories: true,
-            tags: true,
-            _count: {
-              select: {
-                views: true,
-                comments: true,
-              },
-            },
           },
         }),
         prisma.post.count({ where }),
       ]);
 
-      const result = {
-        posts: posts.map((post) => ({
-          ...post,
-          viewCount: post._count.views,
-          commentCount: post._count.comments,
-        })),
+      return {
+        posts,
         query: searchQuery,
         pagination: {
           page,
@@ -631,62 +478,7 @@ export class PostService {
           totalPages: Math.ceil(total / limit),
         },
       };
-
-      // Cache for 5 minutes
-      await cacheService.set(cacheKey, result, 300);
-
-      return result;
     }
-  }
-
-  async bulkDelete(postIds: string[], userId: string, userRole: string) {
-    // Verify user can delete all posts
-    const posts = await prisma.post.findMany({
-      where: { id: { in: postIds } },
-      select: { id: true, authorId: true, slug: true },
-    });
-
-    if (userRole !== 'admin') {
-      const unauthorized = posts.find((post) => post.authorId !== userId);
-      if (unauthorized) {
-        throw new Error('You are not authorized to delete some of these posts');
-      }
-    }
-
-    await prisma.post.deleteMany({
-      where: { id: { in: postIds } },
-    });
-
-    // Invalidate cache
-    for (const post of posts) {
-      await cacheService.invalidatePost(post.slug);
-    }
-    await cacheService.invalidatePosts();
-
-    return { message: `${posts.length} posts deleted successfully` };
-  }
-
-  async duplicatePost(id: string, userId: string) {
-    const originalPost = await this.getPostById(id);
-
-    // Create new post with "Copy of" prefix
-    return await this.createPost(
-      {
-        title: `Copy of ${originalPost.title}`,
-        content: originalPost.content,
-        excerpt: originalPost.excerpt || undefined,
-        featuredImage: originalPost.featuredImage || undefined,
-        published: false,
-        categoryIds: originalPost.categories.map((c) => c.id),
-        tagIds: originalPost.tags.map((t) => t.id),
-        metaTitle: originalPost.metaTitle || undefined,
-        metaDescription: originalPost.metaDescription || undefined,
-        ogTitle: originalPost.ogTitle || undefined,
-        ogDescription: originalPost.ogDescription || undefined,
-        ogImage: originalPost.ogImage || undefined,
-      },
-      userId
-    );
   }
 }
 
